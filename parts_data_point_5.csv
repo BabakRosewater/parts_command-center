@@ -1,0 +1,11 @@
+Category,Count,Pieces,Cost,Value
+Stock Orders Placed,446,1326,28959.68,39970.49
+Stock Orders Received,1243,24656,55447.69,196243.18
+Special Orders Placed,280,667,62925.72,66048.18
+Special Orders Received,308,703,74429.37,77786.78
+Parts Canceled,5,6,716.68,736.43
+Factory Returns,,,,
+Core Returns,,,,
+Parts On Order,,69,588.37,1119.56
+Parts On Backorder,,,,
+Parts Referred,,,,
