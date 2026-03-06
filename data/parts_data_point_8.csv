@@ -1,0 +1,14 @@
+Category,Sales,Cost,Gross,GP%
+Sales Filled From Shelf,264219.64,180684.93,83534.71,31.6
+Sales Filled By NG,,,,
+Sales Filled By EP,816599.41,534046.92,282552.49,34.6
+Sales Filled By SO,141849.95,92809.38,49040.57,34.6
+Total Sales,1222669,807541.23,415127.77,34
+Returns To Inventory,-12412.03,-12217.9,-194.13,-1.6
+Returns Not To Inventory,-5581.08,-3660.35,-1920.73,-34.4
+Total Returns,-17993.11,-15878.25,-2114.86,-11.8
+Net Sales,1204675.89,791662.98,413012.91,34.3
+Filled From Shelf-Counter,0.131,0.131,0.129,
+Filled From Shelf-Service,0.228,0.24,0.208,
+Filled Same Day--Counter,0.95,0.953,0.94,
+Filled Same Day--Service,0.874,0.873,0.876,
