@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parts Command Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body class="bg-slate-100 text-slate-900">
+  <div class="max-w-7xl mx-auto px-4 py-6 md:px-6 lg:px-8">
+    <header class="rounded-3xl bg-slate-900 text-white p-6 shadow-lg mb-6">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div class="text-xs uppercase tracking-[0.25em] text-slate-300">Fixed Ops Intelligence</div>
+          <h1 class="text-3xl md:text-4xl font-bold mt-2">Parts Command Center</h1>
+          <p class="text-slate-300 mt-2 max-w-3xl">
+            One-screen view of inventory health, demand, purchasing discipline, and operational performance.
+          </p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 min-w-[280px]">
+          <div class="metric-card bg-slate-800 border-slate-700">
+            <div class="metric-label">Status</div>
+            <div id="appStatus" class="metric-value text-lg">Loading…</div>
+          </div>
+          <div class="metric-card bg-slate-800 border-slate-700">
+            <div class="metric-label">Source Mode</div>
+            <div id="sourceMode" class="metric-value text-lg">Local CSV</div>
+          </div>
+          <div class="metric-card bg-slate-800 border-slate-700">
+            <div class="metric-label">Last Refresh</div>
+            <div id="lastRefresh" class="metric-value text-lg">—</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section class="mb-8 rounded-3xl bg-white p-5 shadow-sm border border-slate-200">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h2 class="text-xl font-semibold">Data Configuration</h2>
+          <p class="text-sm text-slate-600 mt-1">
+            By default, the app reads from local <code class="bg-slate-100 px-1 rounded">/data/*.csv</code> files.
+            You can switch each source to a GitHub raw URL in <code class="bg-slate-100 px-1 rounded">app.js</code>.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <button id="btnRefresh" class="btn btn-primary">Refresh Data</button>
+          <button id="btnToggleDebug" class="btn btn-secondary">Toggle Debug</button>
+        </div>
+      </div>
+      <div id="sourceList" class="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4"></div>
+      <pre id="debugBox" class="hidden mt-4 rounded-2xl bg-slate-950 text-slate-100 p-4 overflow-auto text-xs"></pre>
+    </section>
+
+    <section class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Panel 1</div>
+            <h2 class="panel-title">Inventory Health</h2>
+          </div>
+          <div class="panel-subtitle">DP1 + DP6</div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="metric-card"><div class="metric-label">Inventory Value</div><div id="invValue" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Dead Stock Value</div><div id="deadValue" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Dead Stock %</div><div id="deadPct" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Non-Stock Parts</div><div id="nonStockCount" class="metric-value">—</div></div>
+        </div>
+        <div class="chart-wrap"><canvas id="inventoryMixChart"></canvas></div>
+        <div class="table-wrap mt-4">
+          <div class="table-title">Top Dead Stock</div>
+          <div id="deadStockTable"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Panel 2</div>
+            <h2 class="panel-title">Demand & Lost Sales</h2>
+          </div>
+          <div class="panel-subtitle">DP2 + DP3</div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="metric-card"><div class="metric-label">In-Stock Sales</div><div id="stockSales" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">EP Spend</div><div id="epSpend" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Fast Movers</div><div id="fastMoverCount" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Phase-In Candidates</div><div id="phaseInCount" class="metric-value">—</div></div>
+        </div>
+        <div class="chart-wrap"><canvas id="velocityChart"></canvas></div>
+        <div class="table-wrap mt-4">
+          <div class="table-title">Phase-In Candidates (EP repeated 3+)</div>
+          <div id="phaseInTable"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Panel 3</div>
+            <h2 class="panel-title">Purchasing Discipline</h2>
+          </div>
+          <div class="panel-subtitle">DP4 + DP5</div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="metric-card"><div class="metric-label">Stock Order %</div><div id="stockOrderPct" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Special Order %</div><div id="specialOrderPct" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Open Core Value</div><div id="coreValue" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Core Return Qty</div><div id="coreQty" class="metric-value">—</div></div>
+        </div>
+        <div class="chart-wrap"><canvas id="buyRatioChart"></canvas></div>
+        <div class="table-wrap mt-4">
+          <div class="table-title">Highest Core Value Opportunities</div>
+          <div id="coreTable"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-kicker">Panel 4</div>
+            <h2 class="panel-title">Operational Performance</h2>
+          </div>
+          <div class="panel-subtitle">DP7 + DP8</div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="metric-card"><div class="metric-label">Open RO Sales</div><div id="openRoSales" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Pending Gross</div><div id="pendingGross" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">Shelf Fill %</div><div id="shelfFillPct" class="metric-value">—</div></div>
+          <div class="metric-card"><div class="metric-label">EP Fill %</div><div id="epFillPct" class="metric-value">—</div></div>
+        </div>
+        <div class="chart-wrap"><canvas id="serviceLevelChart"></canvas></div>
+        <div class="table-wrap mt-4">
+          <div class="table-title">Pipeline & Fill Rate Detail</div>
+          <div id="pipelineTable"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

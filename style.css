@@ -1,0 +1,140 @@
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.panel {
+  background: white;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1.5rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  min-height: 100%;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-kicker,
+.metric-label,
+.table-title,
+.panel-subtitle {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(100 116 139);
+}
+
+.panel-title {
+  font-size: 1.25rem;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.metric-card {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  padding: 0.85rem 0.95rem;
+  background: rgb(248 250 252);
+}
+
+.metric-value {
+  font-weight: 800;
+  font-size: 1.35rem;
+  line-height: 1.15;
+  margin-top: 0.25rem;
+}
+
+.chart-wrap {
+  background: rgb(248 250 252);
+  border-radius: 1rem;
+  border: 1px solid rgb(226 232 240);
+  padding: 0.75rem;
+  height: 260px;
+}
+
+.chart-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.table-wrap {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  padding: 0.75rem;
+  background: white;
+}
+
+.table-scroll {
+  overflow: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  border-bottom: 1px solid rgb(226 232 240);
+  padding: 0.55rem 0.4rem;
+  vertical-align: top;
+}
+
+.data-table th {
+  color: rgb(71 85 105);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgb(248 250 252);
+  position: sticky;
+  top: 0;
+}
+
+.btn {
+  border-radius: 9999px;
+  padding: 0.7rem 1rem;
+  font-weight: 700;
+  transition: 180ms ease;
+}
+
+.btn-primary {
+  background: rgb(15 23 42);
+  color: white;
+}
+
+.btn-primary:hover { opacity: 0.92; }
+
+.btn-secondary {
+  background: white;
+  border: 1px solid rgb(203 213 225);
+  color: rgb(15 23 42);
+}
+
+.code-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  background: rgb(241 245 249);
+  border: 1px solid rgb(226 232 240);
+  border-radius: 9999px;
+  padding: 0.4rem 0.65rem;
+}
+
+.source-card {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  background: rgb(248 250 252);
+  padding: 0.75rem;
+}
+
+.empty-state {
+  color: rgb(100 116 139);
+  font-size: 0.875rem;
+  padding: 0.5rem 0;
+}
