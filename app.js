@@ -1,475 +1,334 @@
-const DATA_SOURCES = {
-  dp1: { label: "DP1 Inventory Stratification", path: "./data/parts_data_point_1.csv" },
-  dp2: { label: "DP2 Stock Sales Ledger", path: "./data/parts_data_point_2.csv" },
-  dp3: { label: "DP3 Emergency Purchase Ledger", path: "./data/parts_data_point_3.csv" },
-  dp4: { label: "DP4 Purchasing Activity", path: "./data/parts_data_point_4.csv" },
-  dp5: { label: "DP5 Core Return Report", path: "./data/parts_data_point_5.csv" },
-  dp6: { label: "DP6 Replenishment Settings", path: "./data/parts_data_point_6.csv" },
-  dp7: { label: "DP7 Unrealized Sales / Pipeline", path: "./data/parts_data_point_7.csv" },
-  dp8: { label: "DP8 Service Level / Fill Rate", path: "./data/parts_data_point_8.csv" }
-};
+const SOURCES = [
+  { id: 'dp1', label: 'DP1 Inventory Stratification', file: 'data/parts_data_point_1.csv' },
+  { id: 'dp2', label: 'DP2 Stock Sales Ledger', file: 'data/parts_data_point_2.csv' },
+  { id: 'dp3', label: 'DP3 Emergency Purchase Ledger', file: 'data/parts_data_point_3.csv' },
+  { id: 'dp4', label: 'DP4 Purchasing Activity', file: 'data/parts_data_point_4.csv' },
+  { id: 'dp5', label: 'DP5 Core Return Report', file: 'data/parts_data_point_5.csv' },
+  { id: 'dp6', label: 'DP6 Replenishment Settings', file: 'data/parts_data_point_6.csv' },
+  { id: 'dp7', label: 'DP7 Unrealized Sales / Pipeline', file: 'data/parts_data_point_7.csv' },
+  { id: 'dp8', label: 'DP8 Service Level / Fill Rate', file: 'data/parts_data_point_8.csv' },
+];
 
-// Replace any path with a GitHub raw URL when ready.
-// Example:
-// DATA_SOURCES.dp1.path = "https://raw.githubusercontent.com/BabakRosewater/parts/main/data/parts_data_point_1.csv";
+const charts = {};
+const debugState = { visible: false, payload: null };
 
-const state = {
-  raw: {},
-  charts: {},
-  debug: false
-};
-
-const $ = (id) => document.getElementById(id);
-
-function setText(id, value) {
-  const el = $(id);
-  if (el) el.textContent = value;
-}
-
-function formatMoney(value) {
-  const num = Number(value || 0);
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(num);
-}
-
-function formatPct(value, digits = 1) {
-  const num = Number(value || 0);
-  return `${num.toFixed(digits)}%`;
-}
-
-function formatNumber(value) {
-  const num = Number(value || 0);
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(num);
-}
-
-function safeNumber(value) {
-  if (value === null || value === undefined || value === "") return 0;
-  const cleaned = String(value).replace(/[$,%\s]/g, "").replace(/,/g, "");
-  const num = Number(cleaned);
-  return Number.isFinite(num) ? num : 0;
-}
-
-function normalizePart(raw) {
-  const text = String(raw || "").trim();
-  if (!text) return { number: "", description: "" };
-
-  const noPrefix = text.replace(/^([A-Z]{2,3})\s+/, "");
-  const parts = noPrefix.split(" : ");
-  return {
-    number: (parts[0] || "").trim(),
-    description: parts.slice(1).join(" : ").trim()
-  };
-}
-
-async function fetchCsv(source) {
-  const response = await fetch(source.path, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Failed to load ${source.path} (${response.status})`);
-  return response.text();
-}
-
-function parseCsv(text) {
-  return Papa.parse(text, {
-    header: true,
-    skipEmptyLines: true,
-    dynamicTyping: false
-  }).data;
-}
-
-function cleanDp2(text) {
-  const lines = String(text).split(/\r?\n/);
-  const headerIndex = lines.findIndex((line) => line.includes("MF Part Number/Description"));
-  const cleaned = headerIndex >= 0 ? lines.slice(headerIndex).join("\n") : text;
-  return parseCsv(cleaned).filter((row) => row["MF Part Number/Description"]);
-}
-
-function cleanDefault(text) {
-  return parseCsv(text).filter((row) => Object.values(row).some((v) => String(v || "").trim() !== ""));
-}
-
-function sum(rows, key) {
-  return rows.reduce((acc, row) => acc + safeNumber(row[key]), 0);
-}
-
-function topN(items, n, sortKey) {
-  return [...items].sort((a, b) => safeNumber(b[sortKey]) - safeNumber(a[sortKey])).slice(0, n);
-}
-
-function percent(part, total) {
-  return total > 0 ? (part / total) * 100 : 0;
-}
-
-function buildTable(containerId, columns, rows) {
-  const target = $(containerId);
-  if (!target) return;
-
-  if (!rows.length) {
-    target.innerHTML = `<div class="empty-state">No rows available.</div>`;
-    return;
+document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
+document.getElementById('btnDebug').addEventListener('click', () => {
+  debugState.visible = !debugState.visible;
+  document.getElementById('debugPanel').classList.toggle('hidden', !debugState.visible);
+  if (debugState.visible && debugState.payload) {
+    document.getElementById('debugText').textContent = JSON.stringify(debugState.payload, null, 2);
   }
+});
 
-  const head = columns.map((col) => `<th>${col.label}</th>`).join("");
-  const body = rows.map((row) => {
-    const cells = columns.map((col) => `<td>${col.format ? col.format(row[col.key], row) : (row[col.key] ?? "")}</td>`).join("");
-    return `<tr>${cells}</tr>`;
-  }).join("");
+renderSourceCards();
+loadDashboard();
 
-  target.innerHTML = `
-    <div class="table-scroll max-h-72">
-      <table class="data-table">
-        <thead><tr>${head}</tr></thead>
-        <tbody>${body}</tbody>
-      </table>
-    </div>
-  `;
-}
-
-function destroyChart(key) {
-  if (state.charts[key]) {
-    state.charts[key].destroy();
-    delete state.charts[key];
-  }
-}
-
-function makeChart(key, canvasId, config) {
-  destroyChart(key);
-  const ctx = $(canvasId)?.getContext("2d");
-  if (!ctx) return;
-  state.charts[key] = new Chart(ctx, config);
-}
-
-function renderSources() {
-  const html = Object.entries(DATA_SOURCES).map(([key, source]) => {
-    const mode = source.path.includes("raw.githubusercontent.com") ? "GitHub Raw" : "Local";
-    return `
-      <div class="source-card">
-        <div class="text-xs uppercase tracking-[0.08em] text-slate-500">${key.toUpperCase()}</div>
-        <div class="font-semibold mt-1">${source.label}</div>
-        <div class="text-xs text-slate-600 mt-2 break-all">${source.path}</div>
-        <div class="mt-3"><span class="code-pill">${mode}</span></div>
-      </div>
-    `;
-  }).join("");
-
-  $("sourceList").innerHTML = html;
-  setText("sourceMode", Object.values(DATA_SOURCES).some((s) => s.path.includes("raw.githubusercontent.com")) ? "Mixed / GitHub" : "Local CSV");
-}
-
-function computeInventoryHealth(dp1, dp6) {
-  const inventoryRows = dp1.map((row) => {
-    const part = normalizePart(row["Part/Description"]);
-    return {
-      ...row,
-      partNumber: part.number,
-      description: part.description,
-      piecesSold: safeNumber(row.PiecesSold),
-      onHandQty: safeNumber(row["O/HQty"]),
-      extCost: safeNumber(row.ExtCost),
-      stockStatus: String(row.StockStatus || "").trim()
-    };
-  });
-
-  const replRows = dp6.map((row) => ({
-    partNumber: String(row.Part || "").trim(),
-    description: String(row.Description || "").trim(),
-    status: String(row.Status || "").trim(),
-    onHand: safeNumber(row["On Hand"]),
-    avgMonth: safeNumber(row["Avg Month"]),
-    stockMax: safeNumber(row["Stock Max"]),
-    rop: safeNumber(row.ROP)
-  }));
-
-  const inventoryValue = sum(inventoryRows, "extCost");
-  const deadStockRows = inventoryRows.filter((r) => r.piecesSold === 0 && r.onHandQty > 0);
-  const deadStockValue = sum(deadStockRows, "extCost");
-  const nonStockCount = replRows.filter((r) => r.status.toLowerCase() === "non").length;
-  const activeCount = inventoryRows.filter((r) => r.piecesSold > 0).length;
-
-  return {
-    inventoryValue,
-    deadStockValue,
-    deadPct: percent(deadStockValue, inventoryValue),
-    nonStockCount,
-    activeCount,
-    deadStockRows: topN(deadStockRows, 10, "extCost")
-  };
-}
-
-function computeDemand(dp2, dp3) {
-  const stockRows = dp2.map((row) => {
-    const part = normalizePart(row["MF Part Number/Description"]);
-    return {
-      ...row,
-      partNumber: part.number,
-      description: part.description,
-      qty: safeNumber(row.Qty),
-      net: safeNumber(row.Net),
-      date: row.Date
-    };
-  });
-
-  const epRows = dp3.map((row) => {
-    const part = normalizePart(row["MF Part Number/Description"]);
-    return {
-      ...row,
-      partNumber: part.number,
-      description: part.description,
-      qty: safeNumber(row.Qty),
-      net: safeNumber(row.Net),
-      extension: safeNumber(row.Extension),
-      date: row.Date
-    };
-  });
-
-  const groupedStock = new Map();
-  stockRows.forEach((row) => {
-    const key = row.partNumber || row.description;
-    const current = groupedStock.get(key) || { partNumber: row.partNumber, description: row.description, qty: 0, net: 0, transactions: 0 };
-    current.qty += row.qty;
-    current.net += row.net;
-    current.transactions += 1;
-    groupedStock.set(key, current);
-  });
-
-  const groupedEP = new Map();
-  epRows.forEach((row) => {
-    const key = row.partNumber || row.description;
-    const current = groupedEP.get(key) || { partNumber: row.partNumber, description: row.description, hits: 0, spend: 0, qty: 0 };
-    current.hits += 1;
-    current.spend += row.extension || row.net;
-    current.qty += row.qty;
-    groupedEP.set(key, current);
-  });
-
-  const fastMovers = topN([...groupedStock.values()], 10, "qty");
-  const phaseInCandidates = [...groupedEP.values()].filter((r) => r.hits >= 3).sort((a, b) => b.hits - a.hits || b.spend - a.spend);
-
-  return {
-    stockSales: sum(stockRows, "net"),
-    epSpend: epRows.reduce((acc, row) => acc + (row.extension || row.net), 0),
-    fastMovers,
-    phaseInCandidates
-  };
-}
-
-function computePurchasing(dp4, dp5) {
-  const purchaseRows = dp4.map((row) => ({
-    category: String(row.Category || "").trim(),
-    count: safeNumber(row.Count),
-    pieces: safeNumber(row.Pieces),
-    cost: safeNumber(row.Cost),
-    value: safeNumber(row.Value)
-  }));
-
-  const coreRows = dp5.map((row) => {
-    const part = normalizePart(row["Part/Description"]);
-    return {
-      ...row,
-      partNumber: part.number,
-      description: part.description,
-      rtnQty: safeNumber(row.RtnQty),
-      onHand: safeNumber(row["O/H"]),
-      cost: safeNumber(row.Cost),
-      value: safeNumber(row.Value)
-    };
-  });
-
-  const stockPlaced = purchaseRows.find((r) => /stock orders placed/i.test(r.category))?.cost || 0;
-  const specialPlaced = purchaseRows.find((r) => /special orders placed/i.test(r.category))?.cost || 0;
-  const totalPlaced = stockPlaced + specialPlaced;
-  const openCoreValue = sum(coreRows, "value");
-  const coreQty = sum(coreRows, "rtnQty");
-
-  return {
-    stockOrderPct: percent(stockPlaced, totalPlaced),
-    specialOrderPct: percent(specialPlaced, totalPlaced),
-    openCoreValue,
-    coreQty,
-    coreRows: topN(coreRows, 10, "value")
-  };
-}
-
-function computeOps(dp7, dp8) {
-  const pipelineRows = dp7.map((row) => ({
-    category: String(row.Category || "").trim(),
-    sales: safeNumber(row.Sales),
-    gross: safeNumber(row.Gross),
-    pieces: safeNumber(row.Pieces)
-  }));
-
-  const fillRows = dp8.map((row) => ({
-    category: String(row.Category || "").trim(),
-    sales: safeNumber(row.Sales),
-    cost: safeNumber(row.Cost),
-    gross: safeNumber(row.Gross),
-    gpPct: safeNumber(row["GP%"])
-  }));
-
-  const totalFillSales = sum(fillRows, "sales");
-  const shelfSales = fillRows.find((r) => /shelf/i.test(r.category))?.sales || 0;
-  const epSales = fillRows.find((r) => /ep/i.test(r.category))?.sales || 0;
-  const soSales = fillRows.find((r) => /so/i.test(r.category))?.sales || 0;
-
-  return {
-    openRoSales: pipelineRows.find((r) => /open repair orders/i.test(r.category))?.sales || 0,
-    pendingGross: pipelineRows.find((r) => /open repair orders/i.test(r.category))?.gross || 0,
-    shelfFillPct: percent(shelfSales, totalFillSales),
-    epFillPct: percent(epSales, totalFillSales),
-    soFillPct: percent(soSales, totalFillSales),
-    pipelineRows,
-    fillRows
-  };
-}
-
-function renderDashboard(metrics) {
-  // Panel 1
-  setText("invValue", formatMoney(metrics.inventory.inventoryValue));
-  setText("deadValue", formatMoney(metrics.inventory.deadStockValue));
-  setText("deadPct", formatPct(metrics.inventory.deadPct));
-  setText("nonStockCount", formatNumber(metrics.inventory.nonStockCount));
-
-  makeChart("inventoryMix", "inventoryMixChart", {
-    type: "doughnut",
-    data: {
-      labels: ["Dead Stock", "Active / Productive"],
-      datasets: [{ data: [metrics.inventory.deadStockValue, Math.max(metrics.inventory.inventoryValue - metrics.inventory.deadStockValue, 0)] }]
-    },
-    options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
-  });
-
-  buildTable("deadStockTable", [
-    { key: "partNumber", label: "Part" },
-    { key: "description", label: "Description" },
-    { key: "onHandQty", label: "OH Qty", format: (v) => formatNumber(v) },
-    { key: "extCost", label: "Ext Cost", format: (v) => formatMoney(v) }
-  ], metrics.inventory.deadStockRows);
-
-  // Panel 2
-  setText("stockSales", formatMoney(metrics.demand.stockSales));
-  setText("epSpend", formatMoney(metrics.demand.epSpend));
-  setText("fastMoverCount", formatNumber(metrics.demand.fastMovers.length));
-  setText("phaseInCount", formatNumber(metrics.demand.phaseInCandidates.length));
-
-  makeChart("velocity", "velocityChart", {
-    type: "bar",
-    data: {
-      labels: metrics.demand.fastMovers.map((r) => r.partNumber || r.description).slice(0, 8),
-      datasets: [{ label: "Qty Sold", data: metrics.demand.fastMovers.map((r) => r.qty).slice(0, 8) }]
-    },
-    options: {
-      maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true } },
-      plugins: { legend: { display: false } }
-    }
-  });
-
-  buildTable("phaseInTable", [
-    { key: "partNumber", label: "Part" },
-    { key: "description", label: "Description" },
-    { key: "hits", label: "EP Hits", format: (v) => formatNumber(v) },
-    { key: "spend", label: "Spend", format: (v) => formatMoney(v) }
-  ], metrics.demand.phaseInCandidates.slice(0, 10));
-
-  // Panel 3
-  setText("stockOrderPct", formatPct(metrics.purchasing.stockOrderPct));
-  setText("specialOrderPct", formatPct(metrics.purchasing.specialOrderPct));
-  setText("coreValue", formatMoney(metrics.purchasing.openCoreValue));
-  setText("coreQty", formatNumber(metrics.purchasing.coreQty));
-
-  makeChart("buyRatio", "buyRatioChart", {
-    type: "pie",
-    data: {
-      labels: ["Stock Orders", "Special Orders"],
-      datasets: [{ data: [metrics.purchasing.stockOrderPct, metrics.purchasing.specialOrderPct] }]
-    },
-    options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
-  });
-
-  buildTable("coreTable", [
-    { key: "partNumber", label: "Part" },
-    { key: "description", label: "Description" },
-    { key: "rtnQty", label: "Qty", format: (v) => formatNumber(v) },
-    { key: "value", label: "Value", format: (v) => formatMoney(v) }
-  ], metrics.purchasing.coreRows);
-
-  // Panel 4
-  setText("openRoSales", formatMoney(metrics.ops.openRoSales));
-  setText("pendingGross", formatMoney(metrics.ops.pendingGross));
-  setText("shelfFillPct", formatPct(metrics.ops.shelfFillPct));
-  setText("epFillPct", formatPct(metrics.ops.epFillPct));
-
-  makeChart("serviceLevel", "serviceLevelChart", {
-    type: "bar",
-    data: {
-      labels: ["Shelf", "EP", "SO"],
-      datasets: [{ label: "Fill Mix %", data: [metrics.ops.shelfFillPct, metrics.ops.epFillPct, metrics.ops.soFillPct] }]
-    },
-    options: {
-      maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true, max: 100 } },
-      plugins: { legend: { display: false } }
-    }
-  });
-
-  buildTable("pipelineTable", [
-    { key: "category", label: "Category" },
-    { key: "sales", label: "Sales", format: (v) => formatMoney(v) },
-    { key: "gross", label: "Gross", format: (v) => formatMoney(v) },
-    { key: "pieces", label: "Pieces", format: (v) => formatNumber(v) }
-  ], metrics.ops.pipelineRows);
-}
-
-function renderDebug(metrics) {
-  const debugPayload = {
-    timestamp: new Date().toISOString(),
-    rowCounts: Object.fromEntries(Object.entries(state.raw).map(([k, v]) => [k, v.length])),
-    metrics
-  };
-  $("debugBox").textContent = JSON.stringify(debugPayload, null, 2);
-}
-
-async function loadAllData() {
-  setText("appStatus", "Loading…");
+async function loadDashboard() {
+  setText('statusReady', 'Loading…');
   try {
-    renderSources();
-
-    const [dp1Text, dp2Text, dp3Text, dp4Text, dp5Text, dp6Text, dp7Text, dp8Text] = await Promise.all(
-      Object.values(DATA_SOURCES).map((source) => fetchCsv(source))
-    );
-
-    state.raw.dp1 = cleanDefault(dp1Text);
-    state.raw.dp2 = cleanDp2(dp2Text);
-    state.raw.dp3 = cleanDefault(dp3Text);
-    state.raw.dp4 = cleanDefault(dp4Text);
-    state.raw.dp5 = cleanDefault(dp5Text);
-    state.raw.dp6 = cleanDefault(dp6Text);
-    state.raw.dp7 = cleanDefault(dp7Text);
-    state.raw.dp8 = cleanDefault(dp8Text);
-
-    const metrics = {
-      inventory: computeInventoryHealth(state.raw.dp1, state.raw.dp6),
-      demand: computeDemand(state.raw.dp2, state.raw.dp3),
-      purchasing: computePurchasing(state.raw.dp4, state.raw.dp5),
-      ops: computeOps(state.raw.dp7, state.raw.dp8)
-    };
-
-    renderDashboard(metrics);
-    renderDebug(metrics);
-    setText("appStatus", "Ready");
-    setText("lastRefresh", new Date().toLocaleString());
-  } catch (error) {
-    console.error(error);
-    setText("appStatus", "Error");
-    $("debugBox").classList.remove("hidden");
-    $("debugBox").textContent = String(error?.stack || error);
+    const raw = {};
+    for (const src of SOURCES) raw[src.id] = await parseCsv(src.id, src.file);
+    const metrics = computeMetrics(raw);
+    renderAll(metrics, raw);
+    setText('statusReady', 'Ready');
+    setText('lastRefresh', new Date().toLocaleString());
+    debugState.payload = { metrics, rawCounts: Object.fromEntries(Object.entries(raw).map(([k,v]) => [k, v.length])) };
+    if (debugState.visible) document.getElementById('debugText').textContent = JSON.stringify(debugState.payload, null, 2);
+  } catch (err) {
+    console.error(err);
+    setText('statusReady', 'Load Error');
+    alert('Dashboard could not load one or more CSV files. Open browser console for detail.');
   }
 }
 
-function bindEvents() {
-  $("btnRefresh").addEventListener("click", loadAllData);
-  $("btnToggleDebug").addEventListener("click", () => {
-    state.debug = !state.debug;
-    $("debugBox").classList.toggle("hidden", !state.debug);
+function renderSourceCards() {
+  document.getElementById('sourceGrid').innerHTML = SOURCES.map((s, i) => `
+    <div class="source-card">
+      <div class="text-[10px] uppercase tracking-[.08em] text-slate-500 font-bold">DP${i + 1}</div>
+      <div class="font-extrabold text-sm mt-1">${s.label}</div>
+      <div class="text-xs text-slate-500 mt-1">/${s.file}</div>
+      <span class="tag">Local</span>
+    </div>
+  `).join('');
+}
+
+function parseCsv(id, file) {
+  return new Promise((resolve, reject) => {
+    Papa.parse(file, {
+      download: true,
+      skipEmptyLines: 'greedy',
+      complete: (results) => {
+        try {
+          resolve(normalizeRows(id, results.data || []));
+        } catch (e) { reject(e); }
+      },
+      error: reject,
+    });
   });
 }
 
-bindEvents();
-loadAllData();
+function normalizeRows(id, rows) {
+  if (!rows.length) return [];
+  const cleanCell = (v) => String(v ?? '').trim();
+  const normalized = rows.map(r => Array.isArray(r) ? r.map(cleanCell) : Object.values(r).map(cleanCell));
+
+  if (id === 'dp2') {
+    const idx = normalized.findIndex(r => r.join(' ').includes('MF Part Number/Description'));
+    const usable = idx >= 0 ? normalized.slice(idx + 1) : normalized;
+    return usable.filter(r => r.some(Boolean)).map(r => ({
+      part_desc: r[0] || '', date: r[1] || '', qty: toNum(r[2]), net: toNum(r[3]), extension: toNum(r[4])
+    })).filter(r => r.part_desc && /\d/.test(r.date));
+  }
+  if (id === 'dp1') {
+    const [header, ...body] = normalized;
+    return body.map(r => ({
+      part_desc: r[0], pieces_sold: toNum(r[1]), total_sales: toNum(r[2]), accum_sales: toNum(r[3]), accum_pct: toNum(r[4]),
+      oh_qty: toNum(r[5]), cost: toNum(r[6]), ext_cost: toNum(r[7]), stock_status: r[8]
+    })).filter(r => r.part_desc);
+  }
+  if (id === 'dp3') {
+    const [header, ...body] = normalized;
+    return body.map(r => ({ part_desc: r[0], date: r[1], qty: toNum(r[2]), net: toNum(r[3]), extension: toNum(r[4]) })).filter(r => r.part_desc);
+  }
+  if (id === 'dp4') {
+    const [header, ...body] = normalized;
+    return body.map(r => ({ category: r[0], count: toNum(r[1]), pieces: toNum(r[2]), cost: toNum(r[3]), value: toNum(r[4]) })).filter(r => r.category);
+  }
+  if (id === 'dp5') {
+    const [header, ...body] = normalized;
+    return body.map(r => ({ stock_group: r[0], part_desc: r[1], rtn_qty: toNum(r[2]), dls: toNum(r[3]), dps: toNum(r[4]), oh: toNum(r[5]), cost: toNum(r[6]), value: toNum(r[7]) })).filter(r => r.part_desc);
+  }
+  if (id === 'dp6') {
+    const [header, ...body] = normalized;
+    return body.map(r => ({ part: r[0], description: r[1], bin: r[2], stock_max: toNum(r[3]), rop: toNum(r[4]), on_hand: toNum(r[5]), on_order: toNum(r[6]), qty_sugg: toNum(r[7]), status: r[8], avg_month: toNum(r[9]), hi_mth: toNum(r[10]), lo_mth: toNum(r[11]) })).filter(r => r.part || r.description);
+  }
+  if (id === 'dp7') {
+    const [header, ...body] = normalized;
+    return body.map(r => ({ category: r[0], sales: toNum(r[1]), gross: toNum(r[2]), pieces: toNum(r[3]) })).filter(r => r.category);
+  }
+  if (id === 'dp8') {
+    const [header, ...body] = normalized;
+    return body.map(r => ({ category: r[0], sales: toNum(r[1]), cost: toNum(r[2]), gross: toNum(r[3]), gp_pct: toNum(r[4]) })).filter(r => r.category);
+  }
+  return [];
+}
+
+function computeMetrics(raw) {
+  const dp1 = raw.dp1;
+  const dp2 = raw.dp2;
+  const dp3 = raw.dp3;
+  const dp4 = raw.dp4;
+  const dp5 = raw.dp5;
+  const dp6 = raw.dp6;
+  const dp7 = raw.dp7;
+  const dp8 = raw.dp8;
+
+  const inventoryValue = sum(dp1, 'ext_cost');
+  const deadStock = dp1.filter(r => r.pieces_sold === 0 && r.oh_qty > 0);
+  const deadValue = sum(deadStock, 'ext_cost');
+  const deadPct = ratio(deadValue, inventoryValue);
+  const nonStockCount = dp6.filter(r => /non/i.test(r.status)).length;
+  const topDead = deadStock.sort((a,b) => b.ext_cost - a.ext_cost).slice(0, 15).map(splitPartDescWithValue('ext_cost'));
+
+  const stockSales = sum(dp2, 'extension');
+  const epSpend = sum(dp3, 'extension');
+  const moverMap = groupByPart(dp2, 'extension');
+  const fastMovers = [...moverMap.values()].sort((a,b) => b.total - a.total).slice(0, 10);
+  const epMap = groupByPart(dp3, 'extension');
+  const phaseIn = [...epMap.values()].filter(x => x.hits >= 3).sort((a,b) => b.hits - a.hits || b.total - a.total).slice(0, 20);
+
+  const stockPlaced = dp4.find(r => /stock orders placed/i.test(r.category))?.cost || 0;
+  const specialPlaced = dp4.find(r => /special orders placed/i.test(r.category))?.cost || 0;
+  const stockOrderPct = ratio(stockPlaced, stockPlaced + specialPlaced);
+  const specialOrderPct = ratio(specialPlaced, stockPlaced + specialPlaced);
+  const openCoreValue = sum(dp5, 'value');
+  const coreQty = sum(dp5, 'rtn_qty');
+  const topCore = dp5.filter(r => r.value > 0).sort((a,b) => b.value - a.value).slice(0, 15).map(splitPartDescWithValue('value'));
+
+  const openRoSales = dp7.find(r => /open repair orders/i.test(r.category))?.sales || 0;
+  const pendingGross = dp7.find(r => /open repair orders/i.test(r.category))?.gross || 0;
+  const shelfSales = dp8.find(r => /filled from shelf/i.test(r.category))?.sales || 0;
+  const epSales = dp8.find(r => /filled by ep/i.test(r.category))?.sales || 0;
+  const soSales = dp8.find(r => /filled by so/i.test(r.category))?.sales || 0;
+  const totalFillSales = shelfSales + epSales + soSales;
+  const shelfFillPct = ratio(shelfSales, totalFillSales);
+  const epFillPct = ratio(epSales, totalFillSales);
+
+  const healthScore = Math.max(0, Math.min(100,
+    100
+    - (deadPct * 100 * 0.45)
+    - (specialOrderPct * 100 * 0.20)
+    - ((0.85 - shelfFillPct) > 0 ? (0.85 - shelfFillPct) * 100 * 0.40 : 0)
+    - (phaseIn.length > 20 ? 8 : phaseIn.length > 10 ? 4 : 0)
+  ));
+
+  const alerts = buildAlerts({ deadPct, nonStockCount, epSpend, stockSales, phaseInCount: phaseIn.length, stockOrderPct, specialOrderPct, shelfFillPct, openRoSales, pendingGross, topDead, phaseIn });
+
+  return {
+    cards: { inventoryValue, deadValue, deadPct, nonStockCount, stockSales, epSpend, fastMoversCount: fastMovers.length, phaseInCount: phaseIn.length, stockOrderPct, specialOrderPct, openCoreValue, coreQty, openRoSales, pendingGross, shelfFillPct, epFillPct },
+    tables: { topDead, phaseIn, topCore, pipeline: dp7.filter(r => r.sales || r.gross) },
+    charts: {
+      inventoryMix: [inventoryValue - deadValue, deadValue],
+      fastMovers,
+      buyRatio: [stockPlaced, specialPlaced],
+      fillRate: [shelfSales, epSales, soSales],
+    },
+    alerts,
+    healthScore,
+    dataHealth: SOURCES.map(s => ({ id: s.id, label: s.label, rows: raw[s.id].length, file: s.file }))
+  };
+}
+
+function buildAlerts(m) {
+  const alerts = [];
+  if (m.deadPct >= 0.25) {
+    alerts.push(alertObj('Critical dead stock pressure', 'red', `Dead stock is ${pct(m.deadPct)} of inventory value. That is too much cash frozen on the shelf.`, 'Pull the top dead-stock list, create return / liquidation buckets, and assign an owner this week.'));
+  } else if (m.deadPct >= 0.12) {
+    alerts.push(alertObj('Moderate dead stock pressure', 'yellow', `Dead stock is ${pct(m.deadPct)} of inventory value.`, 'Review aged parts by value and set a monthly cleanup cadence.'));
+  } else {
+    alerts.push(alertObj('Dead stock in reasonable range', 'green', `Dead stock is ${pct(m.deadPct)} of inventory value.`, 'Maintain monthly review and keep A/B/C cleanup disciplined.'));
+  }
+
+  if (m.phaseInCount >= 20 || m.epSpend > m.stockSales) {
+    alerts.push(alertObj('Emergency purchase pressure is high', 'red', `${num(m.phaseInCount)} repeated EP candidates found and EP spend is ${money(m.epSpend)}.`, 'Promote repeated EP parts into stocked inventory and review vendor phase-in logic.'));
+  } else if (m.phaseInCount >= 8) {
+    alerts.push(alertObj('Emergency purchase pressure is building', 'yellow', `${num(m.phaseInCount)} repeated EP candidates found.`, 'Review repeated EP items weekly and phase in the clear repeaters.'));
+  }
+
+  if (m.specialOrderPct >= 0.30) {
+    alerts.push(alertObj('Special-order mix is too high', 'red', `Special orders represent ${pct(m.specialOrderPct)} of placed purchasing cost.`, 'Audit buy ratio discipline and identify which special-order demand should become stock demand.'));
+  }
+
+  if (m.shelfFillPct < 0.25) {
+    alerts.push(alertObj('Shelf fill is extremely low', 'red', `Shelf fill is only ${pct(m.shelfFillPct)} by sales mix in this report.`, 'Verify the report definition, then address stocking gaps and non-stock fast movers immediately.'));
+  } else if (m.shelfFillPct < 0.60) {
+    alerts.push(alertObj('Shelf fill needs improvement', 'yellow', `Shelf fill is ${pct(m.shelfFillPct)}.`, 'Compare demand velocity against replenishment status and repair stocking exceptions.'));
+  }
+
+  if (m.pendingGross > 5000) {
+    alerts.push(alertObj('Gross is trapped in open ROs', 'yellow', `${money(m.pendingGross)} gross is tied to open repair order parts.`, 'Partner with service leadership to close aged open ROs and convert pipeline to booked revenue.'));
+  }
+  return alerts;
+}
+
+function renderAll(metrics) {
+  const c = metrics.cards;
+  setText('invValue', money(c.inventoryValue));
+  setText('deadValue', money(c.deadValue));
+  setText('deadPct', pct(c.deadPct));
+  setText('nonStockCount', num(c.nonStockCount));
+  setText('stockSales', money(c.stockSales));
+  setText('epSpend', money(c.epSpend));
+  setText('fastMoversCount', num(c.fastMoversCount));
+  setText('phaseInCount', num(c.phaseInCount));
+  setText('stockOrderPct', pct(c.stockOrderPct));
+  setText('specialOrderPct', pct(c.specialOrderPct));
+  setText('openCoreValue', money(c.openCoreValue));
+  setText('coreQty', num(c.coreQty));
+  setText('openRoSales', money(c.openRoSales));
+  setText('pendingGross', money(c.pendingGross));
+  setText('shelfFillPct', pct(c.shelfFillPct));
+  setText('epFillPct', pct(c.epFillPct));
+  setText('healthScore', `${Math.round(metrics.healthScore)}/100`);
+
+  renderAlerts(metrics.alerts);
+  renderDataHealth(metrics.dataHealth);
+  renderTable('tblDeadStock', metrics.tables.topDead, r => `<tr><td>${escapeHtml(r.part)}</td><td>${escapeHtml(r.description)}</td><td class="text-right">${money(r.value)}</td></tr>`);
+  renderTable('tblPhaseIn', metrics.tables.phaseIn, r => `<tr><td>${escapeHtml(r.part)}</td><td>${escapeHtml(r.description)}</td><td class="text-right">${num(r.hits)}</td></tr>`);
+  renderTable('tblCore', metrics.tables.topCore, r => `<tr><td>${escapeHtml(r.part)}</td><td>${escapeHtml(r.description)}</td><td class="text-right">${money(r.value)}</td></tr>`);
+  renderTable('tblPipeline', metrics.tables.pipeline, r => `<tr><td>${escapeHtml(r.category)}</td><td class="text-right">${money(r.sales)}</td><td class="text-right">${money(r.gross)}</td></tr>`);
+
+  drawChart('chartInventoryMix', 'doughnut', {
+    labels: ['Active / Productive', 'Dead Stock'],
+    datasets: [{ data: metrics.charts.inventoryMix, backgroundColor: ['#3b82f6', '#fb7185'] }]
+  });
+  drawChart('chartFastMovers', 'bar', {
+    labels: metrics.charts.fastMovers.map(x => shorten(x.part, 14)),
+    datasets: [{ label: 'Sales $', data: metrics.charts.fastMovers.map(x => round2(x.total)) }]
+  });
+  drawChart('chartBuyRatio', 'pie', {
+    labels: ['Stock Orders', 'Special Orders'],
+    datasets: [{ data: metrics.charts.buyRatio, backgroundColor: ['#3b82f6', '#fb7185'] }]
+  });
+  drawChart('chartFillRate', 'bar', {
+    labels: ['Shelf', 'EP', 'SO'],
+    datasets: [{ label: 'Sales $', data: metrics.charts.fillRate.map(round2) }]
+  });
+}
+
+function renderAlerts(alerts) {
+  document.getElementById('alerts').innerHTML = alerts.map(a => `
+    <div class="alert">
+      <div class="alert-top">
+        <div class="alert-title">${escapeHtml(a.title)}</div>
+        <span class="alert-tag alert-${a.level}">${a.level.toUpperCase()}</span>
+      </div>
+      <div class="alert-copy">${escapeHtml(a.copy)}</div>
+      <div class="alert-action">Next move: ${escapeHtml(a.action)}</div>
+    </div>`).join('');
+}
+function renderDataHealth(rows) {
+  document.getElementById('dataHealth').innerHTML = rows.map(r => `
+    <div class="row-health">
+      <div>
+        <div class="font-extrabold text-sm">${escapeHtml(r.label)}</div>
+        <div class="meta">/${escapeHtml(r.file)}</div>
+      </div>
+      <div class="text-right">
+        <div class="font-black text-lg">${num(r.rows)}</div>
+        <div class="meta">rows loaded</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderTable(id, rows, rowFn) { document.getElementById(id).innerHTML = rows.map(rowFn).join(''); }
+function drawChart(id, type, data) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type,
+    data,
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: type === 'bar' ? { y: { beginAtZero: true } } : {} }
+  });
+}
+function groupByPart(rows, valueField) {
+  const map = new Map();
+  for (const row of rows) {
+    const { part, description } = splitPartDesc(row.part_desc || row.part || '');
+    const key = `${part}|${description}`;
+    if (!map.has(key)) map.set(key, { part, description, hits: 0, total: 0 });
+    const rec = map.get(key);
+    rec.hits += 1;
+    rec.total += toNum(row[valueField]);
+  }
+  return map;
+}
+function splitPartDesc(s) {
+  const str = String(s || '');
+  const parts = str.split(':');
+  return { part: (parts[0] || '').trim(), description: (parts.slice(1).join(':') || '').trim() || '(no description)' };
+}
+function splitPartDescWithValue(valueField) {
+  return (r) => {
+    const p = splitPartDesc(r.part_desc || r.part || '');
+    return { part: p.part, description: p.description, value: toNum(r[valueField]) };
+  };
+}
+function alertObj(title, level, copy, action) { return { title, level, copy, action }; }
+function setText(id, val) { document.getElementById(id).textContent = val; }
+function sum(arr, field) { return arr.reduce((a, r) => a + toNum(r[field]), 0); }
+function ratio(a, b) { return b ? a / b : 0; }
+function toNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const s = String(v ?? '').trim();
+  if (!s) return 0;
+  const neg = /^\(.*\)$/.test(s);
+  const n = Number(s.replace(/[,$%()]/g, ''));
+  return Number.isFinite(n) ? (neg ? -n : n) : 0;
+}
+function money(n) { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(toNum(n)); }
+function pct(n) { return `${(toNum(n) * 100).toFixed(1)}%`; }
+function num(n) { return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(toNum(n)); }
+function round2(n) { return Math.round(toNum(n) * 100) / 100; }
+function shorten(s, len) { s = String(s || ''); return s.length > len ? `${s.slice(0, len)}…` : s; }
+function escapeHtml(str) { return String(str ?? '').replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
